@@ -131,23 +131,23 @@ export function Hero() {
 }
 
 function FloatingAvatar({
-  label,
-  gradient,
+  src,
+  alt,
   className,
   delay,
 }: {
-  label: string;
-  gradient: string;
+  src: string;
+  alt: string;
   className: string;
   delay: number;
 }) {
   return (
     <motion.div
-      className={`absolute flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br ${gradient} font-display text-lg font-bold text-white shadow-xl ${className}`}
+      className={`absolute h-16 w-16 overflow-hidden rounded-2xl shadow-xl ${className}`}
       animate={{ y: [0, -12, 0] }}
       transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", delay }}
     >
-      {label}
+      <Image src={src} alt={alt} width={64} height={64} className="h-full w-full object-cover" />
     </motion.div>
   );
 }
