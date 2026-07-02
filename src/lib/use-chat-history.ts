@@ -43,6 +43,8 @@ export function useChatHistory(personaIds: PersonaId[]) {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    // One-time hydration from localStorage after mount (SSR has no access to it).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHistory(buildHistoryState(personaIds, loadPersonaHistory));
     setHydrated(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
