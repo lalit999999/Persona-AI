@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import { GithubGlyph } from "./brand-icons";
@@ -83,14 +84,14 @@ export function Hero() {
 
         <div className="relative mx-auto h-80 w-full max-w-sm sm:h-96">
           <FloatingAvatar
-            label="HC"
-            gradient="from-orange-400 to-rose-500"
+            src="/hitesh.png"
+            alt="Hitesh Choudhary"
             className="left-4 top-4"
             delay={0}
           />
           <FloatingAvatar
-            label="PG"
-            gradient="from-sky-400 to-violet-500"
+            src="/piyush.png"
+            alt="Piyush Garg"
             className="right-2 top-16"
             delay={0.6}
           />

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { MessageCircle } from "lucide-react";
@@ -71,9 +72,13 @@ export function LoginCard() {
             key={persona.id}
             className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-stormy-ice bg-stormy-mist px-3 py-2"
           >
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-stormy-charcoal font-display text-xs font-semibold text-white">
-              {persona.initials}
-            </span>
+            <Image
+              src={`/${persona.id}.png`}
+              alt={persona.displayName}
+              width={32}
+              height={32}
+              className="h-8 w-8 shrink-0 rounded-full object-cover"
+            />
             <div className="min-w-0">
               <p className="truncate text-xs font-medium text-stormy-charcoal">
                 {persona.displayName}
