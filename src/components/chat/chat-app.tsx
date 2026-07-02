@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PERSONAS, PERSONA_LIST, type PersonaId } from "@/lib/personas";
 import { useChatHistory, type ChatMessage } from "@/lib/use-chat-history";
 import { PersonaSwitcher } from "@/components/chat/persona-switcher";
@@ -20,14 +20,26 @@ export function ChatApp() {
   const [activePersona, setActivePersona] = useState<PersonaId>(PERSONA_IDS[0]);
   const [inputValue, setInputValue] = useState("");
   const [sendingFor, setSendingFor] = useState<PersonaId | null>(null);
-  const { history, setPersonaMessages, clearPersonaMessages } =
-    useChatHistory(PERSONA_IDS);
+  const {
+    history,
+    conversationIds,
+    loadingPersonas,
+    setPersonaMessages,
+    setConversationId,
+    clearPersonaMessages,
+    ensurePersonaLoaded,
+  } = useChatHistory(PERSONA_IDS);
   const lastAttemptRef = useRef<{ personaId: PersonaId; text: string } | null>(
     null,
   );
 
+  useEffect(() => {
+    void ensurePersonaLoaded(activePersona);
+  }, [activePersona, ensurePersonaLoaded]);
+
   const activeMessages = history[activePersona] ?? [];
   const isBusy = sendingFor !== null;
+  const isLoadingActive = loadingPersonas.has(activePersona);
 
   const sendMessage = useCallback(
     async (personaId: PersonaId, text: string) => {
@@ -35,10 +47,6 @@ export function ChatApp() {
       if (!trimmed) return;
 
       lastAttemptRef.current = { personaId, text: trimmed };
-
-      const historyForRequest = (history[personaId] ?? [])
-        .filter((m) => m.role === "user" || m.role === "assistant")
-        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
       const userMessage: ChatMessage = {
         id: createId(),
@@ -54,13 +62,18 @@ export function ChatApp() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             personaId,
+            conversationId: conversationIds[personaId] ?? undefined,
             message: trimmed,
-            history: historyForRequest,
           }),
         });
 
         if (!res.ok || !res.body) {
           throw new Error("Request failed");
+        }
+
+        const newConversationId = res.headers.get("X-Conversation-Id");
+        if (newConversationId) {
+          setConversationId(personaId, newConversationId);
         }
 
         const reader = res.body.getReader();
@@ -109,7 +122,7 @@ export function ChatApp() {
         setSendingFor((current) => (current === personaId ? null : current));
       }
     },
-    [history, setPersonaMessages],
+    [conversationIds, setPersonaMessages, setConversationId],
   );
 
   function handleSend() {
@@ -140,6 +153,7 @@ export function ChatApp() {
         <MessageList
           messages={activeMessages}
           isThinking={sendingFor === activePersona}
+          isLoading={isLoadingActive}
           personaInitials={PERSONAS[activePersona].initials}
           onRetry={handleRetry}
         />
@@ -147,7 +161,7 @@ export function ChatApp() {
           value={inputValue}
           onChange={setInputValue}
           onSend={handleSend}
-          disabled={isBusy}
+          disabled={isBusy || isLoadingActive}
         />
       </div>
     </div>

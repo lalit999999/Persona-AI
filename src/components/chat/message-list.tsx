@@ -8,6 +8,7 @@ import type { ChatMessage } from "@/lib/use-chat-history";
 interface MessageListProps {
   messages: ChatMessage[];
   isThinking: boolean;
+  isLoading: boolean;
   personaInitials: string;
   onRetry: () => void;
 }
@@ -17,6 +18,7 @@ const SCROLL_THRESHOLD = 48;
 export function MessageList({
   messages,
   isThinking,
+  isLoading,
   personaInitials,
   onRetry,
 }: MessageListProps) {
@@ -46,7 +48,13 @@ export function MessageList({
       onScroll={handleScroll}
       className="flex-1 space-y-4 overflow-y-auto px-4 py-4"
     >
-      {messages.length === 0 && !isThinking && (
+      {isLoading && (
+        <p className="mx-auto mt-8 max-w-sm text-center text-sm text-stormy-slate">
+          Loading conversation…
+        </p>
+      )}
+
+      {!isLoading && messages.length === 0 && !isThinking && (
         <p className="mx-auto mt-8 max-w-sm text-center text-sm text-stormy-slate">
           Start the conversation — ask anything about their area of focus.
         </p>

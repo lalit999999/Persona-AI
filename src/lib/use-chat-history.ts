@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import type { PersonaId } from "@/lib/personas";
 
 export interface ChatMessage {
@@ -10,72 +10,73 @@ export interface ChatMessage {
 }
 
 type HistoryState = Record<PersonaId, ChatMessage[]>;
+type ConversationIdState = Record<PersonaId, string | null>;
 
-function storageKey(personaId: PersonaId) {
-  return `persona-ai:chat:${personaId}`;
-}
-
-function loadPersonaHistory(personaId: PersonaId): ChatMessage[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(storageKey(personaId));
-    return raw ? (JSON.parse(raw) as ChatMessage[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function buildHistoryState(
-  personaIds: PersonaId[],
-  loader: (id: PersonaId) => ChatMessage[],
-): HistoryState {
-  const state = {} as HistoryState;
-  for (const id of personaIds) {
-    state[id] = loader(id);
-  }
+function emptyRecord<T>(personaIds: PersonaId[], value: T): Record<PersonaId, T> {
+  const state = {} as Record<PersonaId, T>;
+  for (const id of personaIds) state[id] = value;
   return state;
 }
 
 export function useChatHistory(personaIds: PersonaId[]) {
   const [history, setHistory] = useState<HistoryState>(() =>
-    buildHistoryState(personaIds, () => []),
+    emptyRecord(personaIds, [] as ChatMessage[]),
   );
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    // One-time hydration from localStorage after mount (SSR has no access to it).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setHistory(buildHistoryState(personaIds, loadPersonaHistory));
-    setHydrated(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const [conversationIds, setConversationIds] = useState<ConversationIdState>(() =>
+    emptyRecord(personaIds, null),
+  );
+  const [loadedPersonas, setLoadedPersonas] = useState<Set<PersonaId>>(new Set());
+  const [loadingPersonas, setLoadingPersonas] = useState<Set<PersonaId>>(new Set());
 
   const setPersonaMessages = useCallback(
     (personaId: PersonaId, updater: (prev: ChatMessage[]) => ChatMessage[]) => {
-      setHistory((prev) => {
-        const next = { ...prev, [personaId]: updater(prev[personaId] ?? []) };
-        if (typeof window !== "undefined") {
-          try {
-            window.localStorage.setItem(
-              storageKey(personaId),
-              JSON.stringify(next[personaId]),
-            );
-          } catch {
-            // storage unavailable (private mode, quota) — in-memory state still works
-          }
-        }
-        return next;
-      });
+      setHistory((prev) => ({ ...prev, [personaId]: updater(prev[personaId] ?? []) }));
     },
     [],
   );
 
-  const clearPersonaMessages = useCallback((personaId: PersonaId) => {
-    setHistory((prev) => ({ ...prev, [personaId]: [] }));
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(storageKey(personaId));
-    }
+  const setConversationId = useCallback((personaId: PersonaId, id: string | null) => {
+    setConversationIds((prev) => ({ ...prev, [personaId]: id }));
   }, []);
 
-  return { history, hydrated, setPersonaMessages, clearPersonaMessages };
+  const clearPersonaMessages = useCallback((personaId: PersonaId) => {
+    setHistory((prev) => ({ ...prev, [personaId]: [] }));
+    setConversationIds((prev) => ({ ...prev, [personaId]: null }));
+  }, []);
+
+  const ensurePersonaLoaded = useCallback(
+    async (personaId: PersonaId) => {
+      if (loadedPersonas.has(personaId) || loadingPersonas.has(personaId)) return;
+      setLoadingPersonas((prev) => new Set(prev).add(personaId));
+      try {
+        const res = await fetch(`/api/chat?personaId=${personaId}`);
+        if (res.ok) {
+          const data = (await res.json()) as {
+            conversationId: string | null;
+            messages: ChatMessage[];
+          };
+          setHistory((prev) => ({ ...prev, [personaId]: data.messages }));
+          setConversationIds((prev) => ({ ...prev, [personaId]: data.conversationId }));
+        }
+      } finally {
+        setLoadedPersonas((prev) => new Set(prev).add(personaId));
+        setLoadingPersonas((prev) => {
+          const next = new Set(prev);
+          next.delete(personaId);
+          return next;
+        });
+      }
+    },
+    [loadedPersonas, loadingPersonas],
+  );
+
+  return {
+    history,
+    conversationIds,
+    loadingPersonas,
+    setPersonaMessages,
+    setConversationId,
+    clearPersonaMessages,
+    ensurePersonaLoaded,
+  };
 }
