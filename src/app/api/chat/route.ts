@@ -3,13 +3,22 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { $Enums } from "@/generated/prisma/client";
 import { PERSONAS, type PersonaId } from "@/lib/personas";
-import { buildSystemPrompt } from "@/lib/promptBuilder";
+import { PERSONA_PROMPTS } from "@/lib/prompts";
+import { isRateLimitOrQuotaError } from "@/lib/errors/llmErrors";
 import { streamPersonaReply, type LlmMessage } from "@/lib/llmClient";
 
 const MAX_HISTORY_MESSAGES = 20;
+const MAX_TITLE_LENGTH = 60;
 
 function toPersonaType(personaId: PersonaId): $Enums.PersonaType {
   return personaId.toUpperCase() as $Enums.PersonaType;
+}
+
+function titleFromMessage(message: string): string {
+  const trimmed = message.trim().replace(/\s+/g, " ");
+  return trimmed.length > MAX_TITLE_LENGTH
+    ? `${trimmed.slice(0, MAX_TITLE_LENGTH).trimEnd()}…`
+    : trimmed;
 }
 
 const postSchema = z.object({
@@ -25,23 +34,36 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
+  const conversationId = url.searchParams.get("conversationId");
   const personaId = url.searchParams.get("personaId");
-  if (!personaId || !(personaId in PERSONAS)) {
-    return new Response("Invalid personaId", { status: 400 });
+
+  let conversation;
+  if (conversationId) {
+    conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, userId: session.user.id },
+      include: { messages: { orderBy: { createdAt: "asc" } } },
+    });
+    if (!conversation) {
+      return new Response("Conversation not found", { status: 404 });
+    }
+  } else {
+    if (!personaId || !(personaId in PERSONAS)) {
+      return new Response("Invalid personaId", { status: 400 });
+    }
+    conversation = await prisma.conversation.findFirst({
+      where: { userId: session.user.id, persona: toPersonaType(personaId as PersonaId) },
+      orderBy: { updatedAt: "desc" },
+      include: { messages: { orderBy: { createdAt: "asc" } } },
+    });
   }
 
-  const conversation = await prisma.conversation.findFirst({
-    where: { userId: session.user.id, persona: toPersonaType(personaId as PersonaId) },
-    orderBy: { updatedAt: "desc" },
-    include: { messages: { orderBy: { createdAt: "asc" } } },
-  });
-
   if (!conversation) {
-    return Response.json({ conversationId: null, messages: [] });
+    return Response.json({ conversationId: null, personaId: null, messages: [] });
   }
 
   return Response.json({
     conversationId: conversation.id,
+    personaId: conversation.persona.toLowerCase(),
     messages: conversation.messages.map((m) => ({
       id: m.id,
       role: m.role.toLowerCase(),
@@ -71,7 +93,7 @@ export async function POST(request: Request) {
 
   if (!conversation) {
     conversation = await prisma.conversation.create({
-      data: { userId, persona: toPersonaType(personaId) },
+      data: { userId, persona: toPersonaType(personaId), title: titleFromMessage(message) },
     });
   }
   const activeConversationId = conversation.id;
@@ -92,7 +114,7 @@ export async function POST(request: Request) {
       content: m.content,
     }));
 
-  const systemPrompt = buildSystemPrompt(PERSONAS[personaId]);
+  const systemPrompt = PERSONA_PROMPTS[personaId].systemPrompt;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -113,6 +135,22 @@ export async function POST(request: Request) {
         });
         controller.close();
       } catch (error) {
+        // Rate-limit/quota fallback: shows a persona-flavored line instead of a raw API
+        // error, to keep the illusion of talking to the persona rather than a broken API call.
+        if (fullText.length === 0 && isRateLimitOrQuotaError(error)) {
+          console.error("LLM rate limit/quota error:", error);
+          const fallback = PERSONA_PROMPTS[personaId].rateLimitFallback;
+          controller.enqueue(encoder.encode(fallback));
+          await prisma.message.create({
+            data: {
+              conversationId: activeConversationId,
+              role: "ASSISTANT",
+              content: fallback,
+            },
+          });
+          controller.close();
+          return;
+        }
         console.error("Chat stream error:", error);
         controller.error(error);
       }

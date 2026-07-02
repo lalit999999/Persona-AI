@@ -2,17 +2,28 @@
 
 import { useRef } from "react";
 import { Send } from "lucide-react";
+import type { PersonaId } from "@/lib/personas";
+import { PersonaToggle } from "@/components/chat/persona-toggle";
 
 interface ComposerProps {
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
   disabled: boolean;
+  activePersona: PersonaId;
+  onSelectPersona: (personaId: PersonaId) => void;
 }
 
 const MAX_TEXTAREA_HEIGHT = 200;
 
-export function Composer({ value, onChange, onSend, disabled }: ComposerProps) {
+export function Composer({
+  value,
+  onChange,
+  onSend,
+  disabled,
+  activePersona,
+  onSelectPersona,
+}: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   function handleInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -47,6 +58,10 @@ export function Composer({ value, onChange, onSend, disabled }: ComposerProps) {
           rows={1}
           placeholder="Message this persona…"
           className="max-h-[200px] min-w-0 flex-1 resize-none bg-transparent text-sm text-stormy-charcoal placeholder:text-stormy-slate focus:outline-none"
+        />
+        <PersonaToggle
+          activePersona={activePersona}
+          onSelect={onSelectPersona}
         />
         <button
           type="button"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { PersonaId } from "@/lib/personas";
 
 export interface ChatMessage {
@@ -9,74 +9,73 @@ export interface ChatMessage {
   content: string;
 }
 
-type HistoryState = Record<PersonaId, ChatMessage[]>;
-type ConversationIdState = Record<PersonaId, string | null>;
-
-function emptyRecord<T>(personaIds: PersonaId[], value: T): Record<PersonaId, T> {
-  const state = {} as Record<PersonaId, T>;
-  for (const id of personaIds) state[id] = value;
-  return state;
+export interface ConversationSummary {
+  id: string;
+  personaId: PersonaId;
+  title: string | null;
+  updatedAt: string;
 }
 
-export function useChatHistory(personaIds: PersonaId[]) {
-  const [history, setHistory] = useState<HistoryState>(() =>
-    emptyRecord(personaIds, [] as ChatMessage[]),
-  );
-  const [conversationIds, setConversationIds] = useState<ConversationIdState>(() =>
-    emptyRecord(personaIds, null),
-  );
-  const [loadedPersonas, setLoadedPersonas] = useState<Set<PersonaId>>(new Set());
-  const [loadingPersonas, setLoadingPersonas] = useState<Set<PersonaId>>(new Set());
+export function useConversations(initialPersona: PersonaId) {
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [conversationsLoaded, setConversationsLoaded] = useState(false);
+  const [activePersona, setActivePersona] = useState<PersonaId>(initialPersona);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isLoadingConversation, setIsLoadingConversation] = useState(false);
 
-  const setPersonaMessages = useCallback(
-    (personaId: PersonaId, updater: (prev: ChatMessage[]) => ChatMessage[]) => {
-      setHistory((prev) => ({ ...prev, [personaId]: updater(prev[personaId] ?? []) }));
-    },
-    [],
-  );
-
-  const setConversationId = useCallback((personaId: PersonaId, id: string | null) => {
-    setConversationIds((prev) => ({ ...prev, [personaId]: id }));
+  const refreshConversations = useCallback(async () => {
+    const res = await fetch("/api/conversations");
+    if (res.ok) {
+      const data = (await res.json()) as { conversations: ConversationSummary[] };
+      setConversations(data.conversations);
+    }
+    setConversationsLoaded(true);
   }, []);
 
-  const clearPersonaMessages = useCallback((personaId: PersonaId) => {
-    setHistory((prev) => ({ ...prev, [personaId]: [] }));
-    setConversationIds((prev) => ({ ...prev, [personaId]: null }));
-  }, []);
+  useEffect(() => {
+    // Fetch-on-mount: the setState happens inside refreshConversations' async
+    // response handler, not synchronously in the effect body.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshConversations();
+  }, [refreshConversations]);
 
-  const ensurePersonaLoaded = useCallback(
-    async (personaId: PersonaId) => {
-      if (loadedPersonas.has(personaId) || loadingPersonas.has(personaId)) return;
-      setLoadingPersonas((prev) => new Set(prev).add(personaId));
-      try {
-        const res = await fetch(`/api/chat?personaId=${personaId}`);
-        if (res.ok) {
-          const data = (await res.json()) as {
-            conversationId: string | null;
-            messages: ChatMessage[];
-          };
-          setHistory((prev) => ({ ...prev, [personaId]: data.messages }));
-          setConversationIds((prev) => ({ ...prev, [personaId]: data.conversationId }));
-        }
-      } finally {
-        setLoadedPersonas((prev) => new Set(prev).add(personaId));
-        setLoadingPersonas((prev) => {
-          const next = new Set(prev);
-          next.delete(personaId);
-          return next;
-        });
+  const loadConversation = useCallback(async (id: string) => {
+    setIsLoadingConversation(true);
+    try {
+      const res = await fetch(`/api/chat?conversationId=${id}`);
+      if (res.ok) {
+        const data = (await res.json()) as {
+          conversationId: string | null;
+          personaId: PersonaId | null;
+          messages: ChatMessage[];
+        };
+        if (data.personaId) setActivePersona(data.personaId);
+        setConversationId(data.conversationId);
+        setMessages(data.messages);
       }
-    },
-    [loadedPersonas, loadingPersonas],
-  );
+    } finally {
+      setIsLoadingConversation(false);
+    }
+  }, []);
+
+  const startNewChat = useCallback((personaId: PersonaId) => {
+    setActivePersona(personaId);
+    setConversationId(null);
+    setMessages([]);
+  }, []);
 
   return {
-    history,
-    conversationIds,
-    loadingPersonas,
-    setPersonaMessages,
+    conversations,
+    conversationsLoaded,
+    activePersona,
+    conversationId,
+    messages,
+    isLoadingConversation,
+    setMessages,
     setConversationId,
-    clearPersonaMessages,
-    ensurePersonaLoaded,
+    loadConversation,
+    startNewChat,
+    refreshConversations,
   };
 }

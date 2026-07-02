@@ -4,12 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { MarkdownContent } from "@/lib/markdown";
 import type { ChatMessage } from "@/lib/use-chat-history";
+import type { PersonaId } from "@/lib/personas";
+import { PersonaAvatar } from "@/components/chat/persona-avatar";
 
 interface MessageListProps {
   messages: ChatMessage[];
   isThinking: boolean;
   isLoading: boolean;
-  personaInitials: string;
+  persona: PersonaId;
+  personaDisplayName: string;
   onRetry: () => void;
 }
 
@@ -19,7 +22,8 @@ export function MessageList({
   messages,
   isThinking,
   isLoading,
-  personaInitials,
+  persona,
+  personaDisplayName,
   onRetry,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -83,9 +87,12 @@ export function MessageList({
         return (
           <div key={message.id} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
             {!isUser && (
-              <span className="mr-2 mt-1 hidden h-7 w-7 shrink-0 items-center justify-center rounded-full bg-stormy-charcoal font-display text-[10px] font-semibold text-white sm:flex">
-                {personaInitials}
-              </span>
+              <PersonaAvatar
+                persona={persona}
+                displayName={personaDisplayName}
+                size={28}
+                className="mr-2 mt-1 hidden sm:inline-flex"
+              />
             )}
             <div
               className={`max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm ${
@@ -108,9 +115,12 @@ export function MessageList({
 
       {isThinking && (
         <div className="flex justify-start">
-          <span className="mr-2 mt-1 hidden h-7 w-7 shrink-0 items-center justify-center rounded-full bg-stormy-charcoal font-display text-[10px] font-semibold text-white sm:flex">
-            {personaInitials}
-          </span>
+          <PersonaAvatar
+            persona={persona}
+            displayName={personaDisplayName}
+            size={28}
+            className="mr-2 mt-1 hidden sm:inline-flex"
+          />
           <div className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-stormy-ice bg-white px-4 py-3 shadow-sm">
             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-stormy-slate [animation-delay:-0.3s]" />
             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-stormy-slate [animation-delay:-0.15s]" />

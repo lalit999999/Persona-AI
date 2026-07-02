@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PERSONAS, PERSONA_LIST, type PersonaId } from "@/lib/personas";
-import { useChatHistory, type ChatMessage } from "@/lib/use-chat-history";
-import { PersonaSwitcher } from "@/components/chat/persona-switcher";
+import { useConversations, type ChatMessage } from "@/lib/use-chat-history";
+import { Sidebar } from "@/components/chat/sidebar";
 import { ChatHeader } from "@/components/chat/chat-header";
 import { MessageList } from "@/components/chat/message-list";
 import { Composer } from "@/components/chat/composer";
 
-const PERSONA_IDS = PERSONA_LIST.map((p) => p.id);
+const DEFAULT_PERSONA: PersonaId = PERSONA_LIST[0].id;
 
 function createId() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -17,44 +17,47 @@ function createId() {
 }
 
 export function ChatApp() {
-  const [activePersona, setActivePersona] = useState<PersonaId>(PERSONA_IDS[0]);
   const [inputValue, setInputValue] = useState("");
-  const [sendingFor, setSendingFor] = useState<PersonaId | null>(null);
+  const [isSending, setIsSending] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const hasAutoLoadedRef = useRef(false);
+  const lastAttemptRef = useRef<{ text: string } | null>(null);
+
   const {
-    history,
-    conversationIds,
-    loadingPersonas,
-    setPersonaMessages,
+    conversations,
+    conversationsLoaded,
+    activePersona,
+    conversationId,
+    messages,
+    isLoadingConversation,
+    setMessages,
     setConversationId,
-    clearPersonaMessages,
-    ensurePersonaLoaded,
-  } = useChatHistory(PERSONA_IDS);
-  const lastAttemptRef = useRef<{ personaId: PersonaId; text: string } | null>(
-    null,
-  );
+    loadConversation,
+    startNewChat,
+    refreshConversations,
+  } = useConversations(DEFAULT_PERSONA);
 
+  // Restore the most recent conversation on first load, ChatGPT-style.
   useEffect(() => {
-    void ensurePersonaLoaded(activePersona);
-  }, [activePersona, ensurePersonaLoaded]);
+    if (!conversationsLoaded || hasAutoLoadedRef.current) return;
+    hasAutoLoadedRef.current = true;
+    if (conversations.length > 0) {
+      void loadConversation(conversations[0].id);
+    }
+  }, [conversationsLoaded, conversations, loadConversation]);
 
-  const activeMessages = history[activePersona] ?? [];
-  const isBusy = sendingFor !== null;
-  const isLoadingActive = loadingPersonas.has(activePersona);
+  const isBusy = isSending || isLoadingConversation;
 
   const sendMessage = useCallback(
-    async (personaId: PersonaId, text: string) => {
+    async (personaId: PersonaId, text: string, activeConversationId: string | null) => {
       const trimmed = text.trim();
       if (!trimmed) return;
 
-      lastAttemptRef.current = { personaId, text: trimmed };
+      lastAttemptRef.current = { text: trimmed };
 
-      const userMessage: ChatMessage = {
-        id: createId(),
-        role: "user",
-        content: trimmed,
-      };
-      setPersonaMessages(personaId, (prev) => [...prev, userMessage]);
-      setSendingFor(personaId);
+      const userMessage: ChatMessage = { id: createId(), role: "user", content: trimmed };
+      setMessages((prev) => [...prev, userMessage]);
+      setIsSending(true);
 
       try {
         const res = await fetch("/api/chat", {
@@ -62,7 +65,7 @@ export function ChatApp() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             personaId,
-            conversationId: conversationIds[personaId] ?? undefined,
+            conversationId: activeConversationId ?? undefined,
             message: trimmed,
           }),
         });
@@ -73,7 +76,7 @@ export function ChatApp() {
 
         const newConversationId = res.headers.get("X-Conversation-Id");
         if (newConversationId) {
-          setConversationId(personaId, newConversationId);
+          setConversationId(newConversationId);
         }
 
         const reader = res.body.getReader();
@@ -91,13 +94,13 @@ export function ChatApp() {
           if (assistantId === null) {
             assistantId = createId();
             const newId = assistantId;
-            setPersonaMessages(personaId, (prev) => [
+            setMessages((prev) => [
               ...prev,
               { id: newId, role: "assistant", content: accumulated },
             ]);
           } else {
             const id = assistantId;
-            setPersonaMessages(personaId, (prev) =>
+            setMessages((prev) =>
               prev.map((m) => (m.id === id ? { ...m, content: accumulated } : m)),
             );
           }
@@ -108,8 +111,9 @@ export function ChatApp() {
         }
 
         lastAttemptRef.current = null;
+        void refreshConversations();
       } catch {
-        setPersonaMessages(personaId, (prev) => [
+        setMessages((prev) => [
           ...prev,
           {
             id: createId(),
@@ -119,49 +123,75 @@ export function ChatApp() {
           },
         ]);
       } finally {
-        setSendingFor((current) => (current === personaId ? null : current));
+        setIsSending(false);
       }
     },
-    [conversationIds, setPersonaMessages, setConversationId],
+    [setMessages, setConversationId, refreshConversations],
   );
 
   function handleSend() {
     if (!inputValue.trim() || isBusy) return;
     const text = inputValue;
     setInputValue("");
-    void sendMessage(activePersona, text);
+    void sendMessage(activePersona, text, conversationId);
   }
 
   function handleRetry() {
     const attempt = lastAttemptRef.current;
     if (!attempt) return;
-    setPersonaMessages(attempt.personaId, (prev) =>
-      prev.filter((m) => m.role !== "error"),
-    );
-    void sendMessage(attempt.personaId, attempt.text);
+    setMessages((prev) => prev.filter((m) => m.role !== "error"));
+    void sendMessage(activePersona, attempt.text, conversationId);
   }
 
-  function handleClear() {
-    clearPersonaMessages(activePersona);
+  function handleNewChat() {
+    startNewChat(activePersona);
+    setIsSidebarOpen(false);
+  }
+
+  function handleSelectPersona(personaId: PersonaId) {
+    if (personaId === activePersona || isBusy) return;
+    startNewChat(personaId);
+  }
+
+  function handleSelectConversation(id: string) {
+    if (id === conversationId) {
+      setIsSidebarOpen(false);
+      return;
+    }
+    void loadConversation(id);
+    setIsSidebarOpen(false);
   }
 
   return (
-    <div className="flex h-dvh flex-col md:flex-row">
-      <PersonaSwitcher activePersona={activePersona} onSelect={setActivePersona} />
+    <div className="flex h-dvh">
+      <Sidebar
+        conversations={conversations}
+        activeConversationId={conversationId}
+        onSelectConversation={handleSelectConversation}
+        onNewChat={handleNewChat}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+      />
       <div className="flex min-w-0 flex-1 flex-col">
-        <ChatHeader persona={PERSONAS[activePersona]} onClear={handleClear} />
+        <ChatHeader
+          persona={PERSONAS[activePersona]}
+          onOpenSidebar={() => setIsSidebarOpen(true)}
+        />
         <MessageList
-          messages={activeMessages}
-          isThinking={sendingFor === activePersona}
-          isLoading={isLoadingActive}
-          personaInitials={PERSONAS[activePersona].initials}
+          messages={messages}
+          isThinking={isSending}
+          isLoading={isLoadingConversation}
+          persona={activePersona}
+          personaDisplayName={PERSONAS[activePersona].displayName}
           onRetry={handleRetry}
         />
         <Composer
           value={inputValue}
           onChange={setInputValue}
           onSend={handleSend}
-          disabled={isBusy || isLoadingActive}
+          disabled={isBusy}
+          activePersona={activePersona}
+          onSelectPersona={handleSelectPersona}
         />
       </div>
     </div>
