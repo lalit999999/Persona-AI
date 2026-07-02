@@ -10,7 +10,10 @@ export interface LlmMessage {
   content: string;
 }
 
-const client = new OpenAI();
+const client = new OpenAI({
+  baseURL : "https://openrouter.ai/api/v1",
+  apiKey : process.env.OPENAI_API_KEY,
+});
 
 const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 
