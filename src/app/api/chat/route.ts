@@ -1,18 +1,12 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { auth } from "@/auth";
-import { getPersonaSystemPrompt, PERSONAS, type PersonaId } from "@/lib/personas";
-
-const anthropic = new Anthropic();
-
-interface ChatRequestMessage {
-  role: "user" | "assistant";
-  content: string;
-}
+import { PERSONAS, type PersonaId } from "@/lib/personas";
+import { buildSystemPrompt } from "@/lib/promptBuilder";
+import { streamPersonaReply, type LlmMessage } from "@/lib/llmClient";
 
 interface ChatRequestBody {
   personaId: PersonaId;
   message: string;
-  history: ChatRequestMessage[];
+  history: LlmMessage[];
 }
 
 export async function POST(request: Request) {
@@ -28,29 +22,21 @@ export async function POST(request: Request) {
     return new Response("Invalid request", { status: 400 });
   }
 
-  const systemPrompt = getPersonaSystemPrompt(personaId);
-  const messages: Anthropic.MessageParam[] = [
-    ...history.map((m) => ({ role: m.role, content: m.content })),
-    { role: "user" as const, content: message },
-  ];
+  const systemPrompt = buildSystemPrompt(PERSONAS[personaId]);
+  const messages: LlmMessage[] = [...history, { role: "user", content: message }];
 
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const claudeStream = anthropic.messages.stream({
-          model: "claude-opus-4-8",
-          max_tokens: 4096,
-          system: systemPrompt,
-          messages,
-        });
+        const llmStream = streamPersonaReply(systemPrompt, messages);
 
-        claudeStream.on("text", (text) => {
+        llmStream.on("text", (text) => {
           controller.enqueue(encoder.encode(text));
         });
 
-        await claudeStream.finalMessage();
+        await llmStream.finalMessage();
         controller.close();
       } catch (error) {
         console.error("Chat stream error:", error);

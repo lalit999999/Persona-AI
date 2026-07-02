@@ -35,7 +35,7 @@ export function PersonaSwitcher({ activePersona, onSelect }: PersonaSwitcherProp
             </span>
             <span className="min-w-0">
               <span className="block truncate text-sm font-medium text-stormy-charcoal">
-                {persona.name}
+                {persona.displayName}
               </span>
               <span className="hidden truncate text-xs text-stormy-slate md:block">
                 {persona.descriptor}

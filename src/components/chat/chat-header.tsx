@@ -1,10 +1,10 @@
 "use client";
 
 import { RotateCcw } from "lucide-react";
-import type { Persona } from "@/lib/personas";
+import type { PersonaProfile } from "@/lib/personas";
 
 interface ChatHeaderProps {
-  persona: Persona;
+  persona: PersonaProfile;
   onClear: () => void;
 }
 
@@ -17,7 +17,7 @@ export function ChatHeader({ persona, onClear }: ChatHeaderProps) {
         </span>
         <div className="min-w-0">
           <p className="truncate font-display text-sm font-semibold text-stormy-charcoal">
-            {persona.name}
+            {persona.displayName}
           </p>
           <p className="truncate text-xs text-stormy-slate">
             AI simulation — not the real person

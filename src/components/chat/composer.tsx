@@ -46,7 +46,7 @@ export function Composer({ value, onChange, onSend, disabled }: ComposerProps) {
           onKeyDown={handleKeyDown}
           rows={1}
           placeholder="Message this persona…"
-          className="max-h-[200px] flex-1 resize-none bg-transparent text-sm text-stormy-charcoal placeholder:text-stormy-slate focus:outline-none"
+          className="max-h-[200px] min-w-0 flex-1 resize-none bg-transparent text-sm text-stormy-charcoal placeholder:text-stormy-slate focus:outline-none"
         />
         <button
           type="button"
